@@ -1,0 +1,163 @@
+---
+title: "NYPD_Shooting_Data_Analysis"
+author: "SathiyaPriya"
+date: "2023-02-22"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+## Importing libraries
+
+```{r library}
+library(tidyverse)
+library(lubridate)
+library(dplyr)
+```
+
+## Importing the NYPD shooting data (Historic)
+
+```{r import_data}
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+NYPD_shooting_data <- read_csv(url_in)
+```
+
+## Tidying and transforming data
+
+1. Converting the 'occur_date' column from Character to date datatype.
+2. Removing the columns that we do not require for our analysis.
+
+```{r tidy_and_transform_data}
+NYPD_shooting_data = mutate(NYPD_shooting_data, OCCUR_DATE = mdy(OCCUR_DATE)) %>%   select(-c(JURISDICTION_CODE,PRECINCT,X_COORD_CD,Y_COORD_CD,Lon_Lat))
+```
+
+I found that the 'perp_age_group' column had age values that are larger than the typical age of a person. So, I eliminated those larger values.
+
+```{r Eliminating_unwanted_data}
+NYPD_shooting_data= subset(NYPD_shooting_data, PERP_AGE_GROUP!="1020" & PERP_AGE_GROUP!="224" & PERP_AGE_GROUP!="940")
+```
+
+Finding the summary of NYPD shooting data
+
+```{r summary of data}
+summary(NYPD_shooting_data)
+```
+
+## Analysis of data
+
+#### Analysis 1: Number of Shooting Incidents by BORO and Year
+
+```{r Number of Shooting Incidents by BORO and Year,  echo=TRUE}
+shooting_incident_by_BORO_and_year = NYPD_shooting_data %>%
+select(c(INCIDENT_KEY,OCCUR_DATE,BORO)) %>%
+mutate(OCCUR_YEAR = format(as.Date(.$OCCUR_DATE),format="%Y")) %>%
+group_by(OCCUR_YEAR,BORO) %>%  
+summarise(n=n())
+shooting_incident_by_BORO_and_year
+```
+
+#### Analysis 2: Number of Shooting Incidents by victim's race and year
+
+```{r Victims race by each year , echo=TRUE}
+shooting_incident_by_victim_race_and_year = NYPD_shooting_data %>%
+select(c(INCIDENT_KEY,OCCUR_DATE,VIC_RACE)) %>%
+mutate(OCCUR_YEAR = format(as.Date(.$OCCUR_DATE),format="%Y")) %>%
+group_by(OCCUR_YEAR,VIC_RACE) %>%  
+summarise(n=n())
+shooting_incident_by_victim_race_and_year
+```
+
+#### Analysis 3: Number of Shooting Incidents by victim's age group and year
+
+```{r Victims race by age group each year , echo=TRUE}
+shooting_incident_by_victim_age_group_and_year = NYPD_shooting_data %>%
+select(c(INCIDENT_KEY,OCCUR_DATE,VIC_AGE_GROUP)) %>%
+mutate(OCCUR_YEAR = format(as.Date(.$OCCUR_DATE),format="%Y")) %>%
+group_by(OCCUR_YEAR,VIC_AGE_GROUP) %>%  
+summarise(n=n()) 
+shooting_incident_by_victim_age_group_and_year
+```
+
+#### Analysis 4:To find death rate of shooting incidents by BORO
+
+```{r summarize_death_boro}
+NYPD_death_rate_by_boro <- NYPD_shooting_data %>%
+    group_by(BORO) %>%
+    summarize(cases = n(),deaths = sum(STATISTICAL_MURDER_FLAG)) %>%
+    mutate(death_rate = round(deaths / cases,3)) %>%
+    ungroup()  
+NYPD_death_rate_by_boro
+```
+
+
+## Visualization of data
+
+#### Viz 1: Number of Shooting Incidents by BORO and Year
+```{r Visualization for Number of Shooting Incidents by BORO and Year, echo=TRUE}
+shooting_incident_by_BORO_and_year %>% ggplot(aes(x = OCCUR_YEAR, y = n, group = BORO)) + geom_point(aes(color = BORO)) + geom_line(aes(color = BORO)) +
+labs(x = "Year", y = "No of Shooting Incidents", color = "BORO") +
+ggtitle("Shooting Incidents by BORO and Year") +
+theme(plot.title = element_text(hjust = 0))
+```
+
+
+From the above visualization, we can see that Brooklyn has had the highest number of shooting incidents from the year 2006 to 2020. Bronx took over Brooklyn in the year 2021. Also, we can see that the number of shooting incidents in Staten Island has been low when compared to all the other 4 BOROs over the years.
+
+
+#### Viz 2: Number of Shooting Incidents by victim's race and year
+```{r  Visualization for Number of Shooting Incidents by victims race and year, echo = TRUE}
+shooting_incident_by_victim_race_and_year %>% ggplot(aes(x = OCCUR_YEAR, y = n, fill = VIC_RACE), color = VIC_RACE) + geom_bar(stat = 'identity', position = 'dodge') +
+theme(legend.position = "bottom", axis.text.x = element_text(angle = 90), plot.title = element_text(hjust = 0)) + labs(title = "Number of Shooting Incidents by victim's race and year", y = "No of Shooting Incidents", x = "Year", fill = "Victim's Race")
+```
+
+
+From the above visualization, it is quite evident that the black people are the most affected due to these shooting incidents. The second most affected people are White Hispanics although there is a massive difference between the first two spots.
+
+#### Viz 3: Number of Shooting Incidents by victim's age group and year
+
+```{r Visualization for Number of Shooting Incidents by victims age group and year, echo = TRUE}
+shooting_incident_by_victim_age_group_and_year %>% ggplot(aes(x = OCCUR_YEAR, y = n, fill = VIC_AGE_GROUP), color = VIC_AGE_GROUP) + geom_bar(stat = 'identity', position = 'dodge') +
+theme(legend.position = "bottom", axis.text.x = element_text(angle = 90), plot.title = element_text(hjust = 0)) + labs(title = "Number of Shooting Incidents by victim's age group and year", y = "No of Shooting Incidents", x = "Year", fill = "Victim's age group")
+```
+
+
+From the visualization, The victims between the age group of 18-24 and 25-44 were nip and tuck and the most affected in these shooting incidents.
+
+## Model: To build a linear model to see the relationship between the total number of shooting incidents over the years
+
+``` {r Model}
+NYPD_model = NYPD_shooting_data %>%
+  group_by(OCCUR_DATE, BORO, VIC_RACE) %>% 
+  summarize(cases = n()) %>%
+  select(OCCUR_DATE, BORO,VIC_RACE, cases) %>%
+  ungroup()
+
+mod = lm(cases ~ OCCUR_DATE, data = NYPD_model)
+NYPD_model = NYPD_model %>% mutate(pred = predict(mod))
+NYPD_model %>% ggplot() + geom_point(aes(x = OCCUR_DATE, y = cases), color = "red") + geom_point(aes(x = OCCUR_DATE, y = pred), color = "green") + theme(legend.position = "bottom", axis.text.x = element_text(angle = 90), plot.title = element_text(hjust = 0)) + labs(title = "NYPD shootings incidents 2006 -2021", y = "cases", x = "Year")
+```
+
+
+From the above model we built, we can see that the number of shooting incidents over the years have been pretty consistent. We can as well implement the same model for each BORO to further drill down and find if there is an upward or downward trend in the number of shooting incidents over the years.
+
+
+## Bias in the dataset
+
+ The number of male victims are astonishingly high as compared to female victims. 
+ This could potentially be due to the sample size of our data. According to our dataset, female victims consist only 1/6 th of the shooting incidents reported in New york.
+
+## Conclusion
+
+From the analysis that we conducted using the NYPD shooting dataset, It is evident that
+1. The victims mainly were from the age group 18 - 24 and 25 - 44.
+2. Brooklyn contributed for the most number shooting incidents over the years followed by Bronx.
+
+
+## Session info
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
